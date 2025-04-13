@@ -1,65 +1,74 @@
-import { useState, useEffect } from 'react';
-import './App.css'; // Basic styling
-import { supabase } from './supabaseClient'; // Import the client
+import { useState, useEffect, useCallback } from 'react'; // Import useCallback
+import './App.css';
+import { supabase } from './supabaseClient';
+import AddPlayerForm from './AddPlayerForm'; // <--- 1. IMPORT the new component
 
 function App() {
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // useEffect runs code after the component mounts (displays)
-  useEffect(() => {
-    // Define an async function to fetch data
-    async function fetchPlayers() {
-      setLoading(true);
-      setError(null); // Reset error on new fetch
+  // --- 2. MOVE fetchPlayers OUTSIDE useEffect and WRAP in useCallback ---
+  // useCallback ensures the function identity is stable across re-renders
+  // unless its dependencies (empty array here) change.
+  const fetchPlayers = useCallback(async () => {
+    setLoading(true); // Set loading true at the start of fetch
+    setError(null);
 
-      try {
-        // Use the supabase client to fetch data
-        // Make sure you enabled RLS and have a SELECT policy on 'players' for 'anon' role
-        let { data, error: fetchError } = await supabase
-          .from('players') // Select the 'players' table
-          .select('id, name, elo, games_played, wins, losses, draws') // Specify columns you want
-          .order('elo', { ascending: false }); // Order by Elo, highest first
+    try {
+      let { data, error: fetchError } = await supabase
+        .from('players')
+        .select('id, name, elo, games_played, wins, losses, draws')
+        .order('elo', { ascending: false });
 
-        if (fetchError) {
-          // If Supabase returned an error, throw it to the catch block
-          throw fetchError;
-        }
-
-        // If data is successfully fetched, update the state
-        setPlayers(data || []); // Use data or an empty array if data is null
-
-      } catch (err) {
-        // Catch any errors during the fetch process
-        console.error("Error fetching players:", err);
-        // Set a user-friendly error message
-        setError(`Failed to load players: ${err.message}. Check RLS policies.`);
-      } finally {
-        // This runs whether fetch succeeded or failed
-        setLoading(false); // Set loading to false
+      if (fetchError) {
+        throw fetchError;
       }
+      setPlayers(data || []);
+    } catch (err) {
+      console.error("Error fetching players:", err);
+      setError(`Failed to load players: ${err.message}. Check RLS policies.`);
+    } finally {
+      setLoading(false); // Set loading false at the end
     }
+  }, []); // Empty dependency array means this function is created once
 
-    // Call the function to fetch players
-    fetchPlayers();
+  // --- 3. useEffect now calls the fetchPlayers function ---
+  useEffect(() => {
+    fetchPlayers(); // Call it on initial component mount
+  }, [fetchPlayers]); // Dependency array includes fetchPlayers
 
-  }, []); // The empty array [] means this effect runs only once when the component first loads
+  // --- 4. DEFINE the handler function to be passed down ---
+  // This function will be called by AddPlayerForm after a successful add
+  const handlePlayerAdded = () => {
+    setMessageFromForm("Player added! Refreshing list..."); // Optional: show temp message
+    fetchPlayers(); // Re-run the fetch function
+  };
+
+  // Optional: State to show messages triggered from the form
+  const [messageFromForm, setMessageFromForm] = useState('');
+
 
   // --- Render the UI ---
   return (
     <div className="App">
       <h1>Office Chess Club Leaderboard</h1>
 
-      {/* Show loading message */}
+      {/* Show loading message only when fetching players */}
       {loading && <p>Loading players...</p>}
 
       {/* Show error message if fetch failed */}
       {error && <p style={{ color: 'red' }}>{error}</p>}
 
-      {/* Show player list if not loading and no error */}
+      {/* Optional: Display messages from child components */}
+      {messageFromForm && <p style={{color: 'blue'}}>{messageFromForm}</p>}
+
+
+      {/* Show player list table */}
+      {/* Added !loading check here to prevent brief flash of table during load */}
       {!loading && !error && (
         <table border="1" style={{ width: '80%', margin: '20px auto', borderCollapse: 'collapse' }}>
+          {/* ... (thead and tbody remain the same as before) ... */}
           <thead>
             <tr>
               <th>Rank</th>
@@ -86,23 +95,20 @@ function App() {
               ))
             ) : (
               <tr>
-                <td colSpan="7">No players found. Add some to Supabase!</td>
+                <td colSpan="7">No players found. Add some using the form below!</td>
               </tr>
             )}
           </tbody>
         </table>
       )}
 
-      {/* TODO: Add forms for adding players and matches later */}
-      <div style={{ marginTop: '30px' }}>
-         <h2>Future Features</h2>
-         <p>(Add components for these later)</p>
-         <ul>
-            <li>Add New Player Form</li>
-            <li>Submit Match Result Form</li>
-            <li>View Tournaments</li>
-         </ul>
-      </div>
+      {/* --- 5. RENDER the AddPlayerForm component --- */}
+      {/* Pass the handlePlayerAdded function as a prop */}
+      <AddPlayerForm onPlayerAdded={handlePlayerAdded} />
+
+      {/* Remove the old "Future Features" placeholder if you want */}
+      {/* <div style={{ marginTop: '30px' }}> ... </div> */}
+
     </div>
   );
 }
